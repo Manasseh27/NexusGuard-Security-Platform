@@ -1,0 +1,50 @@
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: cisco-security-api
+  namespace: cisco-security
+  labels:
+    app.kubernetes.io/name: cisco-security-platform
+    app.kubernetes.io/component: api
+automountServiceAccountToken: false
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: cisco-security-api
+  namespace: cisco-security
+rules:
+  # Allow reading ConfigMaps for runtime config
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get", "list", "watch"]
+  # Allow reading Secrets (credentials, TLS)
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: cisco-security-api
+  namespace: cisco-security
+subjects:
+  - kind: ServiceAccount
+    name: cisco-security-api
+    namespace: cisco-security
+roleRef:
+  kind: Role
+  apiGroup: rbac.authorization.k8s.io
+  name: cisco-security-api
+---
+# Worker service account — no secret access needed
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: cisco-security-worker
+  namespace: cisco-security
+  labels:
+    app.kubernetes.io/name: cisco-security-platform
+    app.kubernetes.io/component: worker
+automountServiceAccountToken: false

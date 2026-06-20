@@ -1,0 +1,168 @@
+# =============================================================================
+# Cisco Security Platform — Helm Chart Values (Production)
+# =============================================================================
+
+global:
+  image:
+    registry: registry.example.com/cisco-security
+    pullPolicy: IfNotPresent
+    pullSecrets:
+      - name: registry-credentials
+  storageClass: gp3-encrypted
+  tlsSecretName: cisco-security-tls
+
+api:
+  replicaCount: 3
+  image:
+    repository: cisco-security/api
+    tag: "2.0.0"
+  resources:
+    requests: { cpu: 500m, memory: 512Mi }
+    limits:   { cpu: 2000m, memory: 2Gi }
+  autoscaling:
+    enabled: true
+    minReplicas: 3
+    maxReplicas: 20
+    targetCPUUtilizationPercentage: 70
+    targetMemoryUtilizationPercentage: 80
+  podDisruptionBudget:
+    enabled: true
+    minAvailable: 2
+  livenessProbe:
+    httpGet: { path: /health/live, port: 8000 }
+    initialDelaySeconds: 15
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 3
+  readinessProbe:
+    httpGet: { path: /health/ready, port: 8000 }
+    initialDelaySeconds: 20
+    periodSeconds: 5
+    timeoutSeconds: 3
+    failureThreshold: 3
+  podSecurityContext:
+    runAsNonRoot: true
+    runAsUser: 1000
+    fsGroup: 1000
+    seccompProfile: { type: RuntimeDefault }
+  containerSecurityContext:
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
+    capabilities: { drop: [ALL] }
+  env:
+    ENVIRONMENT: production
+    DEBUG: "false"
+    WORKERS: "4"
+  envFromSecrets:
+    - cisco-security-db
+    - cisco-security-redis
+    - cisco-security-jwt
+    - cisco-security-ai
+    - cisco-security-siem
+
+workers:
+  audit:
+    replicaCount: 2
+    queues: audit,default
+    concurrency: 8
+    resources:
+      requests: { cpu: 250m, memory: 256Mi }
+      limits:   { cpu: 1000m, memory: 1Gi }
+  compliance:
+    replicaCount: 3
+    queues: compliance,monitoring
+    concurrency: 4
+    resources:
+      requests: { cpu: 500m, memory: 512Mi }
+      limits:   { cpu: 2000m, memory: 2Gi }
+  network:
+    replicaCount: 2
+    queues: network,remediation
+    concurrency: 16
+    resources:
+      requests: { cpu: 250m, memory: 256Mi }
+      limits:   { cpu: 1000m, memory: 1Gi }
+
+frontend:
+  replicaCount: 2
+  image:
+    repository: cisco-security/frontend
+    tag: "2.0.0"
+  resources:
+    requests: { cpu: 100m, memory: 128Mi }
+    limits:   { cpu: 500m, memory: 512Mi }
+
+ingress:
+  enabled: true
+  className: nginx
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/proxy-body-size: 10m
+    nginx.ingress.kubernetes.io/rate-limit: "100"
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+  hosts:
+    - host: security.example.com
+      paths:
+        - path: /api
+          pathType: Prefix
+          service: api
+        - path: /
+          pathType: Prefix
+          service: frontend
+  tls:
+    - secretName: cisco-security-tls
+      hosts: [security.example.com]
+
+networkPolicy:
+  enabled: true
+
+postgresql:
+  enabled: true
+  auth:
+    database: cisco_security
+    username: cisco_app
+    existingSecret: cisco-security-db
+  primary:
+    resources:
+      requests: { cpu: 500m, memory: 1Gi }
+      limits:   { cpu: 4000m, memory: 8Gi }
+    persistence:
+      enabled: true
+      storageClass: gp3-encrypted
+      size: 100Gi
+  readReplicas:
+    replicaCount: 1
+  metrics:
+    enabled: true
+    serviceMonitor: { enabled: true }
+
+redis:
+  enabled: true
+  architecture: replication
+  auth:
+    enabled: true
+    existingSecret: cisco-security-redis
+  master:
+    persistence:
+      enabled: true
+      storageClass: gp3-encrypted
+      size: 10Gi
+  replica:
+    replicaCount: 2
+  metrics:
+    enabled: true
+
+observability:
+  serviceMonitor:
+    enabled: true
+    interval: 30s
+    path: /metrics
+
+opa:
+  enabled: true
+  image:
+    repository: openpolicyagent/opa
+    tag: 0.61.0-static
+  resources:
+    requests: { cpu: 100m, memory: 128Mi }
+    limits:   { cpu: 500m, memory: 512Mi }

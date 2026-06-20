@@ -1,0 +1,116 @@
+---
+# API pod: accept traffic only from ingress-nginx and frontend
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: cisco-security-api
+  namespace: cisco-security
+spec:
+  podSelector:
+    matchLabels:
+      app: cisco-security-api
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+        - podSelector:
+            matchLabels:
+              app: cisco-security-frontend
+      ports:
+        - protocol: TCP
+          port: 8000
+    # Prometheus scrape
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+      ports:
+        - protocol: TCP
+          port: 8000
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app: cisco-security-postgres
+      ports:
+        - protocol: TCP
+          port: 5432
+    - to:
+        - podSelector:
+            matchLabels:
+              app: cisco-security-redis
+      ports:
+        - protocol: TCP
+          port: 6379
+    - to:
+        - podSelector:
+            matchLabels:
+              app: cisco-security-opa
+      ports:
+        - protocol: TCP
+          port: 8181
+    # OTLP collector
+    - to:
+        - podSelector:
+            matchLabels:
+              app: otel-collector
+      ports:
+        - protocol: TCP
+          port: 4317
+    # External SIEM / AI providers (egress to internet)
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except: ["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"]
+      ports:
+        - protocol: TCP
+          port: 443
+---
+# Workers: same egress as API, no ingress
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: cisco-security-worker
+  namespace: cisco-security
+spec:
+  podSelector:
+    matchLabels:
+      app: cisco-security-worker
+  policyTypes: [Ingress, Egress]
+  ingress: []
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app: cisco-security-postgres
+      ports:
+        - protocol: TCP
+          port: 5432
+    - to:
+        - podSelector:
+            matchLabels:
+              app: cisco-security-redis
+      ports:
+        - protocol: TCP
+          port: 6379
+    # Device SSH access (network devices)
+    - to:
+        - ipBlock:
+            cidr: 10.0.0.0/8
+      ports:
+        - protocol: TCP
+          port: 22
+        - protocol: TCP
+          port: 830  # NETCONF
+---
+# Deny all by default in namespace
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-all
+  namespace: cisco-security
+spec:
+  podSelector: {}
+  policyTypes: [Ingress, Egress]

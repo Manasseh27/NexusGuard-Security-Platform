@@ -1,0 +1,63 @@
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  batch:
+    timeout: 5s
+    send_batch_size: 512
+  memory_limiter:
+    check_interval: 1s
+    limit_mib: 512
+    spike_limit_mib: 128
+  resource:
+    attributes:
+      - key: deployment.environment
+        from_attribute: deployment.environment
+        action: insert
+  # Add correlation ID to all spans
+  attributes:
+    actions:
+      - key: service.namespace
+        value: cisco-security
+        action: insert
+
+exporters:
+  # Jaeger for distributed tracing
+  otlp/jaeger:
+    endpoint: jaeger:4317
+    tls:
+      insecure: true
+
+  # Prometheus for metrics
+  prometheus:
+    endpoint: 0.0.0.0:8889
+    namespace: cisco_security_otel
+    send_timestamps: true
+    metric_expiration: 3m
+
+  # Logging exporter for debug
+  logging:
+    verbosity: normal
+
+extensions:
+  health_check:
+    endpoint: 0.0.0.0:13133
+  pprof:
+    endpoint: 0.0.0.0:1777
+
+service:
+  extensions: [health_check, pprof]
+  pipelines:
+    traces:
+      receivers:  [otlp]
+      processors: [memory_limiter, batch, resource, attributes]
+      exporters:  [otlp/jaeger, logging]
+    metrics:
+      receivers:  [otlp]
+      processors: [memory_limiter, batch]
+      exporters:  [prometheus]

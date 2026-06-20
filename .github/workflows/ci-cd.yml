@@ -1,0 +1,375 @@
+name: Cisco Security Platform — CI/CD
+
+on:
+  push:
+    branches: [main, develop, "release/**"]
+  pull_request:
+    branches: [main, develop]
+  workflow_dispatch:
+    inputs:
+      deploy_environment:
+        description: "Deployment target"
+        required: false
+        type: choice
+        options: [staging, production]
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_PREFIX: ${{ github.repository }}
+  PYTHON_VERSION: "3.12"
+  NODE_VERSION: "20"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+# ═══════════════════════════════════════════════════════════════
+jobs:
+
+# ── 1. Static Analysis & Lint ──────────────────────────────────
+  lint:
+    name: Lint & Static Analysis
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Install linting deps
+        run: pip install ruff mypy bandit[toml] safety
+
+      - name: Ruff — lint & format check
+        run: |
+          ruff check backend/app
+          ruff format --check backend/app
+
+      - name: MyPy — type checking
+        run: mypy backend/app --ignore-missing-imports --strict-optional
+
+      - name: Bandit — SAST security scan
+        run: bandit -r backend/app -c pyproject.toml -ll
+
+      - name: Safety — dependency vulnerability check
+        run: safety check -r backend/requirements.txt --output screen
+        continue-on-error: true   # Don't block on advisory-only warnings
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Frontend lint
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run lint
+          npm run type-check
+
+
+# ── 2. Unit Tests ─────────────────────────────────────────────
+  unit-tests:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    needs: lint
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r backend/requirements.txt
+
+      - name: Run unit tests
+        working-directory: backend
+        env:
+          ENVIRONMENT: development
+          DB_HOST: localhost
+          REDIS_HOST: localhost
+          JWT_SECRET_KEY: test-secret-key-for-ci-only
+        run: |
+          pytest tests/unit \
+            -v \
+            --cov=app \
+            --cov-report=xml:coverage.xml \
+            --cov-report=term-missing \
+            --cov-fail-under=80 \
+            -n auto \
+            --timeout=60
+
+      - name: Upload coverage
+        uses: codecov/codecov-action@v4
+        with:
+          files: backend/coverage.xml
+          flags: unit
+          fail_ci_if_error: false
+
+
+# ── 3. Integration Tests ───────────────────────────────────────
+  integration-tests:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    needs: unit-tests
+
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_DB:       cisco_security_test
+          POSTGRES_USER:     cisco_app
+          POSTGRES_PASSWORD: testpassword
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      redis:
+        image: redis:7.2-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r backend/requirements.txt
+
+      - name: Run integration tests
+        working-directory: backend
+        env:
+          ENVIRONMENT: development
+          DB_HOST: localhost
+          DB_PORT: 5432
+          DB_NAME: cisco_security_test
+          DB_USER: cisco_app
+          DB_PASSWORD: testpassword
+          REDIS_HOST: localhost
+          REDIS_PORT: 6379
+          JWT_SECRET_KEY: test-secret-key-for-ci-only
+          ENABLE_CONTINUOUS_MONITORING: "false"
+          ENABLE_SIEM_EXPORT: "false"
+        run: |
+          pytest tests/integration \
+            -v \
+            --cov=app \
+            --cov-report=xml:coverage-integration.xml \
+            --timeout=120
+
+
+# ── 4. Security Scan ──────────────────────────────────────────
+  security-scan:
+    name: Security Scanning
+    runs-on: ubuntu-latest
+    needs: lint
+    permissions:
+      security-events: write
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Trivy — container vulnerability scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: fs
+          scan-ref: backend
+          format: sarif
+          output: trivy-results.sarif
+          severity: CRITICAL,HIGH
+
+      - name: Upload Trivy results to GitHub Security
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-results.sarif
+
+      - name: pip-audit — Python supply chain audit
+        run: |
+          pip install pip-audit
+          pip-audit -r backend/requirements.txt --format json -o pip-audit-results.json
+        continue-on-error: true
+
+
+# ── 5. Build & Push Container Images ──────────────────────────
+  build:
+    name: Build Container Images
+    runs-on: ubuntu-latest
+    needs: [unit-tests, integration-tests, security-scan]
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop' || startsWith(github.ref, 'refs/heads/release/')
+
+    permissions:
+      contents: read
+      packages: write
+      id-token: write   # For OIDC image signing
+
+    outputs:
+      api_image:      ${{ steps.meta-api.outputs.tags }}
+      frontend_image: ${{ steps.meta-frontend.outputs.tags }}
+      api_digest:     ${{ steps.push-api.outputs.digest }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: API image metadata
+        id: meta-api
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/api
+          tags: |
+            type=sha,prefix=sha-
+            type=ref,event=branch
+            type=semver,pattern={{version}}
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+
+      - name: Build & push API image
+        id: push-api
+        uses: docker/build-push-action@v5
+        with:
+          context: backend
+          target: production
+          push: true
+          tags: ${{ steps.meta-api.outputs.tags }}
+          labels: ${{ steps.meta-api.outputs.labels }}
+          cache-from: type=gha
+          cache-to:   type=gha,mode=max
+          platforms: linux/amd64,linux/arm64
+          provenance: true
+          sbom: true
+
+      - name: Frontend image metadata
+        id: meta-frontend
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/frontend
+          tags: |
+            type=sha,prefix=sha-
+            type=ref,event=branch
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+
+      - name: Build & push frontend image
+        uses: docker/build-push-action@v5
+        with:
+          context: frontend
+          push: true
+          tags: ${{ steps.meta-frontend.outputs.tags }}
+          labels: ${{ steps.meta-frontend.outputs.labels }}
+          cache-from: type=gha
+          cache-to:   type=gha,mode=max
+
+      - name: Sign images with cosign
+        uses: sigstore/cosign-installer@v3
+      - run: |
+          cosign sign --yes ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/api@${{ steps.push-api.outputs.digest }}
+
+
+# ── 6. Deploy to Staging ───────────────────────────────────────
+  deploy-staging:
+    name: Deploy to Staging
+    runs-on: ubuntu-latest
+    needs: build
+    if: github.ref == 'refs/heads/develop'
+    environment:
+      name: staging
+      url: https://staging.security.example.com
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure kubectl
+        uses: azure/k8s-set-context@v3
+        with:
+          method: kubeconfig
+          kubeconfig: ${{ secrets.KUBE_CONFIG_STAGING }}
+
+      - name: Deploy with Helm
+        run: |
+          helm upgrade --install cisco-security ./infrastructure/helm/cisco-security \
+            --namespace cisco-security \
+            --create-namespace \
+            --values ./infrastructure/helm/cisco-security/values.yaml \
+            --values ./infrastructure/helm/cisco-security/values-staging.yaml \
+            --set api.image.tag=sha-${{ github.sha }} \
+            --set frontend.image.tag=sha-${{ github.sha }} \
+            --wait \
+            --timeout 10m \
+            --atomic
+
+      - name: Run smoke tests against staging
+        run: |
+          sleep 30
+          curl -f https://staging.security.example.com/health/live
+          curl -f https://staging.security.example.com/health/ready
+
+
+# ── 7. Deploy to Production ────────────────────────────────────
+  deploy-production:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    needs: build
+    if: github.ref == 'refs/heads/main'
+    environment:
+      name: production
+      url: https://security.example.com
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure kubectl (production)
+        uses: azure/k8s-set-context@v3
+        with:
+          method: kubeconfig
+          kubeconfig: ${{ secrets.KUBE_CONFIG_PRODUCTION }}
+
+      - name: Deploy with Helm (production)
+        run: |
+          helm upgrade --install cisco-security ./infrastructure/helm/cisco-security \
+            --namespace cisco-security \
+            --create-namespace \
+            --values ./infrastructure/helm/cisco-security/values.yaml \
+            --values ./infrastructure/helm/cisco-security/values-production.yaml \
+            --set api.image.tag=sha-${{ github.sha }} \
+            --set frontend.image.tag=sha-${{ github.sha }} \
+            --wait \
+            --timeout 15m \
+            --atomic \
+            --cleanup-on-fail
+
+      - name: Production smoke tests
+        run: |
+          sleep 60
+          curl -f https://security.example.com/health/live
+          curl -f https://security.example.com/health/ready
+
+      - name: Notify deployment success
+        uses: slackapi/slack-github-action@v1.26.0
+        with:
+          payload: |
+            {
+              "text": "✅ Cisco Security Platform deployed to *production* — sha `${{ github.sha }}`"
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK }}
