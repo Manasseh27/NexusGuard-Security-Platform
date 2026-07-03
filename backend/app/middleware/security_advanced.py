@@ -76,10 +76,13 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
     # Different limits for different endpoints
     LIMITS = {
-        "/api/v1/auth/login": (5, 60),  # 5 per minute
-        "/api/v1/auth/refresh": (10, 60),  # 10 per minute
-        "/api/v1/ai/": (20, 60),  # 20 per minute for AI endpoints
-        "/api/v1/": (1000, 3600),  # 1000 per hour for general API
+        "/api/v1/auth/login": (5, 60),           # 5 per minute
+        "/api/v1/auth/register": (3, 60),         # 3 per minute
+        "/api/v1/auth/forgot-password": (3, 300), # 3 per 5 minutes
+        "/api/v1/auth/reset-password": (5, 300),  # 5 per 5 minutes
+        "/api/v1/auth/refresh": (10, 60),         # 10 per minute
+        "/api/v1/ai/": (20, 60),                  # 20 per minute for AI endpoints
+        "/api/v1/": (1000, 3600),                 # 1000 per hour for general API
     }
 
     async def dispatch(self, request: Request, call_next) -> Response:

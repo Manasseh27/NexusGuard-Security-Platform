@@ -14,28 +14,61 @@ const inputStyle = {
   boxSizing: "border-box" as const,
 };
 
-export default function LoginPage() {
+function PasswordStrength({ password }: { password: string }) {
+  const checks = [
+    { label: "12+ characters", ok: password.length >= 12 },
+    { label: "Uppercase letter", ok: /[A-Z]/.test(password) },
+    { label: "Lowercase letter", ok: /[a-z]/.test(password) },
+    { label: "Number", ok: /\d/.test(password) },
+    { label: "Special character", ok: /[^a-zA-Z0-9]/.test(password) },
+  ];
+  if (!password) return null;
+  return (
+    <div style={{ marginTop: 8, display: "flex", flexWrap: "wrap", gap: 6 }}>
+      {checks.map(({ label, ok }) => (
+        <span key={label} style={{
+          fontSize: 11, padding: "2px 8px", borderRadius: 20,
+          background: ok ? "rgba(16,185,129,0.15)" : "rgba(239,68,68,0.12)",
+          color: ok ? C.green : C.red, border: `1px solid ${ok ? C.green : C.red}40`,
+        }}>
+          {ok ? "✓" : "✗"} {label}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+export default function RegisterPage() {
   const navigate = useNavigate();
-  const login = useAuthStore((s) => s.login);
+  const register = useAuthStore((s) => s.register);
   const error = useAuthStore((s) => s.error);
   const isLoading = useAuthStore((s) => s.isLoading);
   const clearError = useAuthStore((s) => s.clearError);
   const accessToken = useAuthStore((s) => s.accessToken);
 
   const [username, setUsername] = useState("");
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [rememberMe, setRememberMe] = useState(false);
+  const [confirm, setConfirm] = useState("");
+  const [localError, setLocalError] = useState("");
 
   useEffect(() => { clearError(); }, [clearError]);
   useEffect(() => { if (accessToken) navigate("/", { replace: true }); }, [accessToken, navigate]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setLocalError("");
+    if (password !== confirm) {
+      setLocalError("Passwords do not match.");
+      return;
+    }
     try {
-      await login(username, password, rememberMe);
+      await register(username, email, password);
       navigate("/", { replace: true });
     } catch { /* error shown via store */ }
   };
+
+  const displayError = localError || error;
 
   return (
     <div style={{
@@ -48,7 +81,7 @@ export default function LoginPage() {
     }}>
       <form onSubmit={handleSubmit} style={{
         width: "100%",
-        maxWidth: 420,
+        maxWidth: 440,
         padding: 32,
         borderRadius: 20,
         border: `1px solid ${C.border}`,
@@ -59,41 +92,47 @@ export default function LoginPage() {
           <div style={{ fontSize: 12, letterSpacing: 2, textTransform: "uppercase", color: C.textMuted }}>
             NexusGuard
           </div>
-          <h1 style={{ fontSize: 28, margin: "10px 0 6px" }}>Secure access</h1>
+          <h1 style={{ fontSize: 28, margin: "10px 0 6px" }}>Create account</h1>
           <p style={{ margin: 0, color: C.textMuted, fontSize: 14 }}>
-            Sign in to the security operations platform.
+            Join the security operations platform.
           </p>
         </div>
 
         <label style={{ display: "block", marginBottom: 14 }}>
           <div style={{ marginBottom: 6, fontSize: 13, color: C.textMuted }}>Username</div>
           <input value={username} onChange={(e) => setUsername(e.target.value)}
-            autoComplete="username" required style={inputStyle} />
+            autoComplete="username" required minLength={3} maxLength={64} style={inputStyle} />
         </label>
 
-        <label style={{ display: "block", marginBottom: 8 }}>
+        <label style={{ display: "block", marginBottom: 14 }}>
+          <div style={{ marginBottom: 6, fontSize: 13, color: C.textMuted }}>Email address</div>
+          <input value={email} onChange={(e) => setEmail(e.target.value)}
+            type="email" autoComplete="email" required style={inputStyle} />
+        </label>
+
+        <label style={{ display: "block", marginBottom: 6 }}>
           <div style={{ marginBottom: 6, fontSize: 13, color: C.textMuted }}>Password</div>
           <input value={password} onChange={(e) => setPassword(e.target.value)}
-            type="password" autoComplete="current-password" required style={inputStyle} />
+            type="password" autoComplete="new-password" required minLength={12} style={inputStyle} />
+        </label>
+        <PasswordStrength password={password} />
+
+        <label style={{ display: "block", marginTop: 14, marginBottom: 18 }}>
+          <div style={{ marginBottom: 6, fontSize: 13, color: C.textMuted }}>Confirm password</div>
+          <input value={confirm} onChange={(e) => setConfirm(e.target.value)}
+            type="password" autoComplete="new-password" required style={{
+              ...inputStyle,
+              borderColor: confirm && confirm !== password ? C.red : C.border,
+            }} />
         </label>
 
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18 }}>
-          <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: C.textMuted, cursor: "pointer" }}>
-            <input type="checkbox" checked={rememberMe} onChange={(e) => setRememberMe(e.target.checked)} />
-            Remember me
-          </label>
-          <Link to="/forgot-password" style={{ fontSize: 13, color: C.cyan, textDecoration: "none" }}>
-            Forgot password?
-          </Link>
-        </div>
-
-        {error && (
+        {displayError && (
           <div style={{
             marginBottom: 16, padding: 12, borderRadius: 12,
             background: "rgba(220,38,38,0.14)", color: "#fecaca",
             border: "1px solid rgba(220,38,38,0.35)", fontSize: 14,
           }}>
-            {error}
+            {displayError}
           </div>
         )}
 
@@ -103,13 +142,13 @@ export default function LoginPage() {
           color: "white", fontWeight: 700, cursor: isLoading ? "wait" : "pointer",
           fontSize: 15,
         }}>
-          {isLoading ? "Signing in…" : "Sign in"}
+          {isLoading ? "Creating account…" : "Create account"}
         </button>
 
         <div style={{ marginTop: 20, textAlign: "center", fontSize: 14, color: C.textMuted }}>
-          Don't have an account?{" "}
-          <Link to="/register" style={{ color: C.cyan, textDecoration: "none", fontWeight: 600 }}>
-            Create account
+          Already have an account?{" "}
+          <Link to="/login" style={{ color: C.cyan, textDecoration: "none", fontWeight: 600 }}>
+            Sign in
           </Link>
         </div>
       </form>

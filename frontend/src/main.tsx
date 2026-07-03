@@ -15,6 +15,10 @@ import UsersPage from "./pages/Users";
 import AnalyticsPage from "./pages/Analytics";
 import ThreatsPage from "./pages/Threats";
 import LoginPage from "./pages/Login";
+import RegisterPage from "./pages/Register";
+import ForgotPasswordPage from "./pages/ForgotPassword";
+import ResetPasswordPage from "./pages/ResetPassword";
+import VerifyEmailPage from "./pages/VerifyEmail";
 import CopilotPage from "./pages/Copilot";
 import IncidentsPage from "./pages/Incidents";
 
@@ -66,7 +70,14 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
       <AppErrorBoundary>
         <Router>
           <Routes>
+            {/* Public auth routes */}
             <Route path="/login" element={<LoginPage />} />
+            <Route path="/register" element={<RegisterPage />} />
+            <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+            <Route path="/reset-password" element={<ResetPasswordPage />} />
+            <Route path="/verify-email" element={<VerifyEmailPage />} />
+
+            {/* Protected routes */}
             <Route path="/" element={<ProtectedRoute permission="monitoring:read"><Dashboard /></ProtectedRoute>} />
             <Route path="/devices" element={<ProtectedRoute permission="devices:read"><DevicesPage /></ProtectedRoute>} />
             <Route path="/compliance" element={<ProtectedRoute permission="compliance:read"><CompliancePage /></ProtectedRoute>} />

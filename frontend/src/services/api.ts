@@ -23,6 +23,17 @@ import type {
 const BASE_URL = import.meta.env.VITE_API_URL ?? (import.meta.env.PROD ? "" : "http://localhost:8000");
 let logoutRedirectInProgress = false;
 
+// Extract FastAPI error detail from axios errors
+function extractErrorMessage(err: unknown, fallback: string): never {
+  if (err && typeof err === "object" && "response" in err) {
+    const res = (err as { response?: { data?: { detail?: unknown } } }).response;
+    const detail = res?.data?.detail;
+    if (typeof detail === "string") throw new Error(detail);
+    if (Array.isArray(detail)) throw new Error((detail as Array<{ msg?: string }>).map((d) => d.msg ?? String(d)).join(", "));
+  }
+  throw new Error(fallback);
+}
+
 // ── Axios instance ─────────────────────────────────────────────────────────────
 
 const http: AxiosInstance = axios.create({
@@ -82,8 +93,30 @@ http.interceptors.response.use(
 // ── Auth ───────────────────────────────────────────────────────────────────────
 
 export const authApi = {
-  login: (username: string, password: string) =>
-    http.post<TokenResponse>("/auth/login", { username, password }).then((r) => r.data),
+  login: (username: string, password: string, remember_me = false) =>
+    http.post<TokenResponse>("/auth/login", { username, password, remember_me })
+      .then((r) => r.data)
+      .catch((e) => extractErrorMessage(e, "Login failed")),
+
+  register: (username: string, email: string, password: string) =>
+    http.post<TokenResponse>("/auth/register", { username, email, password })
+      .then((r) => r.data)
+      .catch((e) => extractErrorMessage(e, "Registration failed")),
+
+  forgotPassword: (email: string) =>
+    http.post<{ message: string }>("/auth/forgot-password", { email })
+      .then((r) => r.data)
+      .catch((e) => extractErrorMessage(e, "Request failed")),
+
+  resetPassword: (reset_token: string, new_password: string) =>
+    http.post<{ message: string }>("/auth/reset-password", { reset_token, new_password })
+      .then((r) => r.data)
+      .catch((e) => extractErrorMessage(e, "Reset failed")),
+
+  verifyEmail: (verification_token: string) =>
+    http.post<{ message: string }>("/auth/verify-email", { verification_token })
+      .then((r) => r.data)
+      .catch((e) => extractErrorMessage(e, "Verification failed")),
 
   me: () => http.get<CurrentUser>("/auth/me").then((r) => r.data),
 

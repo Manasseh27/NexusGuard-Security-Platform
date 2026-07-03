@@ -10,9 +10,10 @@ interface AuthState {
   isLoading:    boolean;
   error:        string | null;
 
-  login:  (username: string, password: string) => Promise<void>;
-  logout: () => Promise<void>;
-  fetchMe: () => Promise<void>;
+  login:    (username: string, password: string, rememberMe?: boolean) => Promise<void>;
+  register: (username: string, email: string, password: string) => Promise<void>;
+  logout:   () => Promise<void>;
+  fetchMe:  () => Promise<void>;
   clearError: () => void;
 }
 
@@ -25,16 +26,33 @@ export const useAuthStore = create<AuthState>()(
       isLoading:    false,
       error:        null,
 
-      login: async (username, password) => {
+      login: async (username, password, rememberMe = false) => {
         set({ isLoading: true, error: null });
         try {
-          const tokens = await authApi.login(username, password);
+          const tokens = await authApi.login(username, password, rememberMe);
           localStorage.setItem("access_token", tokens.access_token);
           localStorage.setItem("refresh_token", tokens.refresh_token);
           set({ accessToken: tokens.access_token, refreshToken: tokens.refresh_token });
           await get().fetchMe();
         } catch (err: unknown) {
           const msg = err instanceof Error ? err.message : "Login failed";
+          set({ error: msg });
+          throw err;
+        } finally {
+          set({ isLoading: false });
+        }
+      },
+
+      register: async (username, email, password) => {
+        set({ isLoading: true, error: null });
+        try {
+          const tokens = await authApi.register(username, email, password);
+          localStorage.setItem("access_token", tokens.access_token);
+          localStorage.setItem("refresh_token", tokens.refresh_token);
+          set({ accessToken: tokens.access_token, refreshToken: tokens.refresh_token });
+          await get().fetchMe();
+        } catch (err: unknown) {
+          const msg = err instanceof Error ? err.message : "Registration failed";
           set({ error: msg });
           throw err;
         } finally {
