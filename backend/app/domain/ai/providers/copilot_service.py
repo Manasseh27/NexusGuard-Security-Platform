@@ -44,6 +44,8 @@ from app.domain.ai.providers.workflows import (
     AttackPathWorkflow,
     ConfigAnalysisWorkflow,
     RiskPrioritizationWorkflow,
+    IncidentAnalysisWorkflow,
+    DeviceRecommendationWorkflow,
 )
 from app.domain.ai.providers.analyzers import (
     ACLAnalyzer,
@@ -83,6 +85,8 @@ __all__ = [
     "AttackPathWorkflow",
     "ConfigAnalysisWorkflow",
     "RiskPrioritizationWorkflow",
+    "IncidentAnalysisWorkflow",
+    "DeviceRecommendationWorkflow",
     # Analyzers
     "ACLAnalyzer",
     "SecurityConfigAnalyzer",

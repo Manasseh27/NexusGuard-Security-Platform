@@ -23,6 +23,7 @@ class CopilotOperation(str, Enum):
     """Types of copilot operations."""
 
     COMPLIANCE_EXPLAIN = "compliance_explain"
+    COMPLIANCE_RECOMMEND = "compliance_recommend"
     REMEDIATION_RECOMMEND = "remediation_recommend"
     ACL_ANALYZE = "acl_analyze"
     CVE_EXPLAIN = "cve_explain"
@@ -30,6 +31,8 @@ class CopilotOperation(str, Enum):
     CONFIG_ANALYZE = "config_analyze"
     RISK_PRIORITIZE = "risk_prioritize"
     SECURITY_SUMMARIZE = "security_summarize"
+    INCIDENT_ANALYZE = "incident_analyze"
+    DEVICE_RECOMMEND = "device_recommend"
     CHAT = "chat"
     RAG_QUERY = "rag_query"
 

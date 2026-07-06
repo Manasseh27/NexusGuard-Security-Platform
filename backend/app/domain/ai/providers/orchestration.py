@@ -40,6 +40,8 @@ from app.domain.ai.providers.workflows import (
     CVEWorkflow,
     ConfigAnalysisWorkflow,
     RiskPrioritizationWorkflow,
+    IncidentAnalysisWorkflow,
+    DeviceRecommendationWorkflow,
 )
 
 log = structlog.get_logger(__name__)
@@ -149,21 +151,34 @@ class SecurityCopilotOrchestrator:
         return None
 
     async def stream_response(self, request: CopilotRequest) -> AsyncGenerator[str, None]:
-        """Stream tokens for real-time UI updates."""
+        """Stream tokens for real-time UI updates with fallback."""
         messages = PromptManager.build_messages(request)
-        provider = self._registry.get(self._primary)
-        try:
-            async for token in provider.stream(
-                messages=messages,
-                max_tokens=settings.ai.OPENAI_MAX_TOKENS,
-                temperature=settings.ai.TEMPERATURE,
-            ):
-                yield token
-        except Exception:
-            if self._fallback:
-                provider = self._registry.get(self._fallback)
-                async for token in provider.stream(messages=messages):
+        providers_to_try = [self._primary]
+        if self._fallback:
+            providers_to_try.append(self._fallback)
+
+        last_exc: Exception | None = None
+        for provider_type in providers_to_try:
+            try:
+                provider = self._registry.get(provider_type)
+                async for token in provider.stream(
+                    messages=messages,
+                    max_tokens=settings.ai.OPENAI_MAX_TOKENS,
+                    temperature=settings.ai.TEMPERATURE,
+                ):
                     yield token
+                return  # success — stop trying further providers
+            except Exception as exc:
+                log.warning(
+                    "orchestration.stream.provider_failed",
+                    provider=provider_type.value,
+                    error=str(exc),
+                )
+                last_exc = exc
+
+        raise RuntimeError(
+            f"All AI providers failed during streaming: {last_exc}"
+        )
 
     # ── Workflow Delegation ────────────────────────────────────────────────────
 
@@ -175,13 +190,49 @@ class SecurityCopilotOrchestrator:
         device_metadata: dict[str, Any],
         framework: str,
     ) -> str:
-        """Explain a compliance failure with business impact."""
         return await ComplianceWorkflow.explain_failure(
             rule_id=rule_id,
             rule_name=rule_name,
             findings=findings,
             device_metadata=device_metadata,
             framework=framework,
+            process_fn=self.process,
+        )
+
+    async def recommend_compliance_improvements(
+        self,
+        framework_scores: list[dict[str, Any]],
+        fleet_context: dict[str, Any],
+    ) -> str:
+        return await ComplianceWorkflow.recommend_improvements(
+            framework_scores=framework_scores,
+            fleet_context=fleet_context,
+            process_fn=self.process,
+        )
+
+    async def analyze_incident(
+        self,
+        incident: dict[str, Any],
+        related_events: list[dict[str, Any]],
+    ) -> str:
+        return await IncidentAnalysisWorkflow.analyze_incident(
+            incident=incident,
+            related_events=related_events,
+            process_fn=self.process,
+        )
+
+    async def recommend_for_device(
+        self,
+        device: dict[str, Any],
+        compliance_scores: list[dict[str, Any]],
+        drift_events: list[dict[str, Any]],
+        fleet_context: dict[str, Any],
+    ) -> str:
+        return await DeviceRecommendationWorkflow.recommend_for_device(
+            device=device,
+            compliance_scores=compliance_scores,
+            drift_events=drift_events,
+            fleet_context=fleet_context,
             process_fn=self.process,
         )
 

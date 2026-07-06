@@ -186,19 +186,75 @@ export const complianceApi = {
 
 // ── AI Copilot ─────────────────────────────────────────────────────────────────
 
+const BASE_URL_RAW = import.meta.env.VITE_API_URL ?? (import.meta.env.PROD ? "" : "http://localhost:8000");
+
 export const copilotApi = {
   chat: (message: string, history: ChatMessage[] = [], sessionId?: string) =>
     http
-      .post<CopilotResponse>("/ai/chat", { message, history, session_id: sessionId })
+      .post<CopilotResponse>("/ai/chat", { message, history, session_id: sessionId, stream: false })
       .then((r) => r.data),
 
-  explainCompliance: (ruleId: string, ruleName: string, findings: string[], framework = "cis") =>
+  /** Open an SSE stream. Returns an EventSource-compatible ReadableStream via fetch. */
+  chatStream: (message: string, sessionId: string, signal?: AbortSignal): Promise<ReadableStreamDefaultReader<string>> => {
+    const token = localStorage.getItem("access_token") ?? "";
+    return fetch(`${BASE_URL_RAW}/api/v1/ai/chat`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ message, session_id: sessionId, stream: true }),
+      signal,
+    }).then((res) => {
+      if (!res.ok) throw new Error(`Stream error ${res.status}`);
+      return res.body!.pipeThrough(new TextDecoderStream()).getReader();
+    });
+  },
+
+  explainCompliance: (ruleId: string, ruleName: string, findings: string[], framework = "cis", deviceMetadata: Record<string, unknown> = {}) =>
     http
-      .post<CopilotResponse>("/ai/explain/compliance", { rule_id: ruleId, rule_name: ruleName, findings, framework })
+      .post<CopilotResponse>("/ai/explain/compliance", {
+        rule_id: ruleId,
+        rule_name: ruleName,
+        findings,
+        framework,
+        device_metadata: deviceMetadata,
+      })
+      .then((r) => r.data),
+
+  recommendCompliance: (frameworkScores: Record<string, unknown>[], fleetContext: Record<string, unknown> = {}) =>
+    http
+      .post<CopilotResponse>("/ai/recommend/compliance", { framework_scores: frameworkScores, fleet_context: fleetContext })
+      .then((r) => r.data),
+
+  analyzeIncident: (incident: Record<string, unknown>, relatedEvents: Record<string, unknown>[] = []) =>
+    http
+      .post<CopilotResponse>("/ai/analyze/incident", { incident, related_events: relatedEvents })
+      .then((r) => r.data),
+
+  recommendDevice: (
+    device: Record<string, unknown>,
+    complianceScores: Record<string, unknown>[] = [],
+    driftEvents: Record<string, unknown>[] = [],
+    fleetContext: Record<string, unknown> = {},
+  ) =>
+    http
+      .post<CopilotResponse>("/ai/recommend/device", {
+        device,
+        compliance_scores: complianceScores,
+        drift_events: driftEvents,
+        fleet_context: fleetContext,
+      })
       .then((r) => r.data),
 
   securitySummary: (hours = 24) =>
     http.get<CopilotResponse>("/ai/summary/security", { params: { hours } }).then((r) => r.data),
+
+  sessionHistory: (sessionId: string) =>
+    http.get<{ session_id: string; turns: number; messages: ChatMessage[] }>(`/ai/sessions/${sessionId}/history`).then((r) => r.data),
+
+  clearSession: (sessionId: string) =>
+    http.delete(`/ai/sessions/${sessionId}`),
 
   providersHealth: () =>
     http.get("/ai/providers/health").then((r) => r.data),
