@@ -16,6 +16,59 @@ export interface CurrentUser {
   tenant_id:   string;
 }
 
+// ── Dashboard ─────────────────────────────────────────────────────────────────
+
+export interface FrameworkScore {
+  id:                string;
+  avg_score:         number;
+  device_count:      number;
+  devices_compliant: number;
+  devices_at_risk:   number;
+  devices_critical:  number;
+}
+
+export interface TrendBucket {
+  time:  string;
+  score: number | null;
+  hour?: number;
+}
+
+export interface ActivityItem {
+  type:          "audit" | "incident";
+  id:            string;
+  timestamp:     string;
+  // audit fields
+  action?:       string;
+  resource_type?: string;
+  outcome?:      string;
+  // incident fields
+  title?:        string;
+  severity?:     string;
+  status?:       string;
+}
+
+export interface DashboardSummary {
+  fleet: FleetStatus;
+  frameworks: FrameworkScore[];
+  incidents: {
+    total:         number;
+    open:          number;
+    critical_open: number;
+  };
+  audit: {
+    total:    number;
+    last_24h: number;
+  };
+  trend: TrendBucket[];
+  recent_activity: ActivityItem[];
+  services: {
+    api:      boolean;
+    database: boolean;
+    cache:    boolean;
+  };
+  generated_at: string;
+}
+
 // ── Fleet / Monitoring ─────────────────────────────────────────────────────────
 
 export type MonitoringState = "healthy" | "drifting" | "degraded" | "unreachable" | "remediating";

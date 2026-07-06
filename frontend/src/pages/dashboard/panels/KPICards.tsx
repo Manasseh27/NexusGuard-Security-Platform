@@ -10,21 +10,23 @@ interface KPIRow {
   fleetHealth:        number;
   activeDrifts:       number;
   criticalAlerts:     number;
+  openIncidents:      number;
+  criticalIncidents:  number;
+  auditEvents24h:     number;
+  isLoading:          boolean;
 }
 
 interface KPICardsProps { data: KPIRow; }
 
-// Animated counter
 function useCountUp(target: number, duration = 900): number {
   const [val, setVal] = useState(0);
   const raf = useRef<number>();
   useEffect(() => {
     const start = performance.now();
-    const from = 0;
     const animate = (now: number) => {
       const p = Math.min((now - start) / duration, 1);
       const eased = 1 - Math.pow(1 - p, 3);
-      setVal(from + (target - from) * eased);
+      setVal(target * eased);
       if (p < 1) raf.current = requestAnimationFrame(animate);
     };
     raf.current = requestAnimationFrame(animate);
@@ -34,19 +36,17 @@ function useCountUp(target: number, duration = 900): number {
 }
 
 interface KPICardProps {
-  label:    string;
-  value:    number;
-  format?:  (v: number) => string;
-  sub?:     string;
-  color:    string;
-  icon:     string;
-  trend?:   number;
-  alert?:   boolean;
+  label:   string;
+  value:   number;
+  format?: (v: number) => string;
+  sub?:    string;
+  color:   string;
+  icon:    string;
+  alert?:  boolean;
+  loading: boolean;
 }
 
-const KPICard: React.FC<KPICardProps> = ({
-  label, value, format, sub, color, icon, trend, alert,
-}) => {
+const KPICard: React.FC<KPICardProps> = ({ label, value, format, sub, color, icon, alert, loading }) => {
   const [hovered, setHovered] = useState(false);
   const animated = useCountUp(value);
   const display = format ? format(animated) : Math.round(animated).toLocaleString();
@@ -66,80 +66,49 @@ const KPICard: React.FC<KPICardProps> = ({
         position: "relative",
         overflow: "hidden",
         transition: `all ${ANIM.normal}`,
-        boxShadow: hovered
-          ? `${SHADOW.panel}, 0 0 0 1px ${color}20`
-          : SHADOW.card,
+        boxShadow: hovered ? `${SHADOW.panel}, 0 0 0 1px ${color}20` : SHADOW.card,
         animation: alert ? "border-glow 2s ease-in-out infinite" : "none",
         cursor: "default",
       }}
     >
-      {/* Background glow */}
       <div style={{
         position: "absolute", inset: 0,
         background: `radial-gradient(ellipse at top left, ${color}0c 0%, transparent 60%)`,
         pointerEvents: "none",
       }} />
-      {/* Top-right corner decoration */}
-      <div style={{
-        position: "absolute", top: -20, right: -20,
-        width: 80, height: 80, borderRadius: "50%",
-        background: `radial-gradient(circle, ${color}10 0%, transparent 70%)`,
-        pointerEvents: "none",
-      }} />
 
       <div style={{ position: "relative" }}>
-        {/* Header */}
-        <div style={{
-          display: "flex", alignItems: "center",
-          justifyContent: "space-between", marginBottom: 12,
-        }}>
-          <span style={{
-            color: C.textMuted, fontSize: 10,
-            letterSpacing: "0.08em", textTransform: "uppercase",
-            fontWeight: 500,
-          }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+          <span style={{ color: C.textMuted, fontSize: 10, letterSpacing: "0.08em", textTransform: "uppercase", fontWeight: 500 }}>
             {label}
           </span>
           <div style={{
             width: 30, height: 30, borderRadius: RADIUS.sm,
-            background: `${color}15`,
-            border: `1px solid ${color}25`,
-            display: "flex", alignItems: "center", justifyContent: "center",
-            fontSize: 14,
+            background: `${color}15`, border: `1px solid ${color}25`,
+            display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14,
           }}>
             {icon}
           </div>
         </div>
 
-        {/* Value */}
-        <div style={{
-          color, fontSize: 30, fontWeight: 800,
-          fontFamily: "'JetBrains Mono', monospace",
-          letterSpacing: "-0.03em", lineHeight: 1,
-          marginBottom: 8,
-        }}>
-          {display}
-        </div>
-
-        {/* Sub text */}
-        {sub && (
-          <div style={{ color: C.textDim, fontSize: 11, marginBottom: 6 }}>{sub}</div>
+        {loading ? (
+          <div style={{
+            height: 36, background: `${C.surface3}`,
+            borderRadius: RADIUS.sm, marginBottom: 8,
+            animation: "pulse 1.5s ease-in-out infinite",
+          }} />
+        ) : (
+          <div style={{
+            color, fontSize: 30, fontWeight: 800,
+            fontFamily: "'JetBrains Mono', monospace",
+            letterSpacing: "-0.03em", lineHeight: 1, marginBottom: 8,
+          }}>
+            {display}
+          </div>
         )}
 
-        {/* Trend */}
-        {trend !== undefined && (
-          <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
-            <span style={{
-              color: trend >= 0 ? C.green : C.red,
-              fontSize: 10, fontWeight: 700,
-              background: trend >= 0 ? `${C.green}15` : `${C.red}15`,
-              border: `1px solid ${trend >= 0 ? C.green : C.red}30`,
-              padding: "1px 6px", borderRadius: RADIUS.sm,
-            }}>
-              {trend >= 0 ? "↑" : "↓"} {Math.abs(trend)}%
-            </span>
-            <span style={{ color: C.textMuted, fontSize: 10 }}>vs 24h</span>
-          </div>
+        {sub && !loading && (
+          <div style={{ color: C.textDim, fontSize: 11 }}>{sub}</div>
         )}
       </div>
     </div>
@@ -149,43 +118,61 @@ const KPICard: React.FC<KPICardProps> = ({
 export const KPICards: React.FC<KPICardsProps> = ({ data }) => (
   <div style={{
     display: "grid",
-    gridTemplateColumns: "repeat(4, 1fr)",
+    gridTemplateColumns: "repeat(6, 1fr)",
     gap: 12,
     marginBottom: 16,
   }}>
     <KPICard
-      label="Fleet Compliance Score"
+      label="Compliance Score"
       value={data.score}
       format={(v) => `${v.toFixed(1)}%`}
       color={data.score >= 85 ? C.green : data.score >= 70 ? C.yellow : C.red}
       icon="◈"
-      trend={+1.2}
       sub={`${data.healthyDevices} devices compliant`}
+      loading={data.isLoading}
     />
     <KPICard
-      label="Monitored Devices"
+      label="Active Devices"
       value={data.totalDevices}
       color={C.cyan}
       icon="◫"
-      trend={+3}
       sub={`${data.healthyDevices} healthy · ${data.driftingDevices} drifting`}
+      loading={data.isLoading}
     />
     <KPICard
-      label="Active Drift Events"
+      label="Drift Events"
       value={data.activeDrifts}
       color={data.activeDrifts > 0 ? C.orange : C.green}
       icon="⚡"
-      trend={-2}
-      sub={`${data.criticalAlerts} critical · ${data.unreachableDevices} unreachable`}
+      sub={`${data.criticalAlerts} critical unacked`}
       alert={data.criticalAlerts > 0}
+      loading={data.isLoading}
     />
     <KPICard
-      label="Fleet Health"
-      value={data.fleetHealth}
-      format={(v) => `${v.toFixed(1)}%`}
-      color={data.fleetHealth >= 90 ? C.green : data.fleetHealth >= 75 ? C.yellow : C.red}
-      icon="◉"
-      sub={`${data.unreachableDevices} unreachable devices`}
+      label="Open Incidents"
+      value={data.openIncidents}
+      color={data.openIncidents > 0 ? C.yellow : C.green}
+      icon="⚑"
+      sub={`${data.criticalIncidents} critical open`}
+      alert={data.criticalIncidents > 0}
+      loading={data.isLoading}
+    />
+    <KPICard
+      label="Critical Incidents"
+      value={data.criticalIncidents}
+      color={data.criticalIncidents > 0 ? C.red : C.green}
+      icon="🔴"
+      sub="open critical severity"
+      alert={data.criticalIncidents > 0}
+      loading={data.isLoading}
+    />
+    <KPICard
+      label="Audit Events (24h)"
+      value={data.auditEvents24h}
+      color={C.purple}
+      icon="◎"
+      sub="platform activity"
+      loading={data.isLoading}
     />
   </div>
 );

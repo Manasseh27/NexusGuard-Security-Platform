@@ -1,16 +1,16 @@
 import { create } from "zustand";
-import type { FleetStatus, DriftEvent, DeviceState } from "../types";
-import { monitoringApi } from "../services/api";
+import type { DashboardSummary, DriftEvent, DeviceState } from "../types";
+import { dashboardApi, monitoringApi, complianceApi } from "../services/api";
 
 interface DashboardState {
-  fleet:        FleetStatus | null;
-  driftEvents:  DriftEvent[];
-  devices:      DeviceState[];
-  isLoading:    boolean;
-  lastUpdated:  Date | null;
-  error:        string | null;
+  summary:     DashboardSummary | null;
+  driftEvents: DriftEvent[];
+  devices:     DeviceState[];
+  isLoading:   boolean;
+  lastUpdated: Date | null;
+  error:       string | null;
 
-  fetchFleet:       () => Promise<void>;
+  fetchSummary:     () => Promise<void>;
   fetchDriftEvents: () => Promise<void>;
   fetchDevices:     () => Promise<void>;
   refreshAll:       () => Promise<void>;
@@ -18,19 +18,19 @@ interface DashboardState {
 }
 
 export const useDashboardStore = create<DashboardState>((set, get) => ({
-  fleet:       null,
+  summary:     null,
   driftEvents: [],
   devices:     [],
   isLoading:   false,
   lastUpdated: null,
   error:       null,
 
-  fetchFleet: async () => {
+  fetchSummary: async () => {
     try {
-      const fleet = await monitoringApi.fleetStatus();
-      set({ fleet, lastUpdated: new Date() });
+      const summary = await dashboardApi.summary() as DashboardSummary;
+      set({ summary, lastUpdated: new Date(), error: null });
     } catch (err: unknown) {
-      set({ error: err instanceof Error ? err.message : "Failed to fetch fleet status" });
+      set({ error: err instanceof Error ? err.message : "Failed to fetch dashboard data" });
     }
   },
 
@@ -54,9 +54,9 @@ export const useDashboardStore = create<DashboardState>((set, get) => ({
   },
 
   refreshAll: async () => {
-    set({ isLoading: true, error: null });
+    set({ isLoading: true });
     await Promise.allSettled([
-      get().fetchFleet(),
+      get().fetchSummary(),
       get().fetchDriftEvents(),
       get().fetchDevices(),
     ]);
@@ -69,5 +69,7 @@ export const useDashboardStore = create<DashboardState>((set, get) => ({
         d.drift_id === driftId ? { ...d, acknowledged: true } : d
       ),
     }));
+    // Also persist to backend
+    complianceApi.acknowledgeDrift(driftId).catch(() => undefined);
   },
 }));

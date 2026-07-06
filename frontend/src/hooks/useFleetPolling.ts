@@ -2,11 +2,11 @@ import { useEffect, useRef } from "react";
 import { useDashboardStore } from "../stores/dashboardStore";
 
 /**
- * Polls fleet status, drift events, and device list on mount and at a
- * configurable interval. Returns the store slice needed by dashboard widgets.
+ * Polls the dashboard summary, drift events, and device list on mount
+ * and at a configurable interval.
  */
-export function useFleetPolling(intervalMs = 15_000) {
-  const { fleet, driftEvents, devices, isLoading, lastUpdated, error, refreshAll } =
+export function useFleetPolling(intervalMs = 30_000) {
+  const { summary, driftEvents, devices, isLoading, lastUpdated, error, refreshAll } =
     useDashboardStore();
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -18,5 +18,6 @@ export function useFleetPolling(intervalMs = 15_000) {
     };
   }, [intervalMs, refreshAll]);
 
-  return { fleet, driftEvents, devices, isLoading, lastUpdated, error };
+  // Expose fleet from summary for backward compat with Dashboard.tsx
+  return { fleet: summary?.fleet ?? null, driftEvents, devices, isLoading, lastUpdated, error, summary };
 }

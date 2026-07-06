@@ -1,13 +1,25 @@
 import React from "react";
 import { GlowDot } from "../../../components/widgets";
 import { C, RADIUS } from "../../../styles/tokens";
-import { SERVICE_STATUS } from "../constants";
 
-interface DashboardFooterProps {
-  now: Date;
+interface Services {
+  api:      boolean;
+  database: boolean;
+  cache:    boolean;
 }
 
-export const DashboardFooter: React.FC<DashboardFooterProps> = ({ now }) => (
+interface DashboardFooterProps {
+  now:      Date;
+  services: Services | null;
+}
+
+const SERVICE_LABELS: Array<{ key: keyof Services; label: string }> = [
+  { key: "api",      label: "API"   },
+  { key: "database", label: "DB"    },
+  { key: "cache",    label: "Cache" },
+];
+
+export const DashboardFooter: React.FC<DashboardFooterProps> = ({ now, services }) => (
   <div style={{
     marginTop: 20,
     paddingTop: 14,
@@ -18,10 +30,9 @@ export const DashboardFooter: React.FC<DashboardFooterProps> = ({ now }) => (
     flexWrap: "wrap",
     gap: 10,
   }}>
-    {/* Left: version */}
     <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
       <span style={{ color: C.textMuted, fontSize: 10, letterSpacing: "0.04em" }}>
-        Cisco Security Platform
+        NexusGuard Security Platform
       </span>
       <span style={{
         color: C.cyan, fontSize: 10, fontWeight: 600,
@@ -37,17 +48,21 @@ export const DashboardFooter: React.FC<DashboardFooterProps> = ({ now }) => (
       </span>
     </div>
 
-    {/* Right: service health */}
     <div style={{ display: "flex", gap: 14, alignItems: "center" }}>
-      <span style={{ color: C.textMuted, fontSize: 10, letterSpacing: "0.06em" }}>
-        SERVICES
-      </span>
-      {SERVICE_STATUS.map((svc) => (
-        <div key={svc} style={{ display: "flex", alignItems: "center", gap: 5 }}>
-          <GlowDot color={C.green} size={5} pulse={false} />
-          <span style={{ color: C.textDim, fontSize: 10 }}>{svc}</span>
-        </div>
-      ))}
+      <span style={{ color: C.textMuted, fontSize: 10, letterSpacing: "0.06em" }}>SERVICES</span>
+      {SERVICE_LABELS.map(({ key, label }) => {
+        const ok = services ? services[key] : null;
+        const color = ok === null ? C.textMuted : ok ? C.green : C.red;
+        return (
+          <div key={key} style={{ display: "flex", alignItems: "center", gap: 5 }}>
+            <GlowDot color={color} size={5} pulse={ok === false} />
+            <span style={{ color: C.textDim, fontSize: 10 }}>{label}</span>
+            {ok === false && (
+              <span style={{ color: C.red, fontSize: 9, fontWeight: 600 }}>DOWN</span>
+            )}
+          </div>
+        );
+      })}
     </div>
   </div>
 );

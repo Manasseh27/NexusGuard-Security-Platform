@@ -1,8 +1,10 @@
 /**
- * Dashboard-specific hooks for data transformation and calculations.
+ * Dashboard-specific hooks — all values derived from live API data.
+ * No hardcoded offsets, no Math.random(), no fake calculations.
  */
 
 import { useMemo } from "react";
+import type { DashboardSummary, FrameworkScore } from "../../../types";
 import { FRAMEWORK_META, SEVERITY_DISPLAY } from "../constants";
 
 interface DriftEvent {
@@ -12,21 +14,7 @@ interface DriftEvent {
   [key: string]: unknown;
 }
 
-interface FleetData {
-  average_compliance_score: number;
-  total_devices:            number;
-  healthy:                  number;
-  drifting:                 number;
-  unreachable:              number;
-  degraded:                 number;
-  fleet_health_pct:         number;
-  active_drift_events:      number;
-}
-
-// Stable per-framework offsets — deterministic, no random
-const RADAR_OFFSETS = [3, -5, 2, -7, 4, -9];
-
-/** Calculate severity distribution from drift events. */
+/** Count drift events by severity from live drift data. */
 export function useSeverityCounts(driftEvents: DriftEvent[]) {
   return useMemo(
     () =>
@@ -38,20 +26,29 @@ export function useSeverityCounts(driftEvents: DriftEvent[]) {
   );
 }
 
-/** Generate radar chart data from framework metadata and fleet score. */
-export function useRadarData(fleetScore: number) {
-  return useMemo(
-    () =>
-      FRAMEWORK_META.map((f, i) => ({
+/** Build radar chart data from real per-framework scores. */
+export function useRadarData(frameworks: FrameworkScore[]) {
+  return useMemo(() => {
+    if (!frameworks.length) {
+      // Empty state — return zeroed structure so chart renders correctly
+      return FRAMEWORK_META.map((f) => ({
         subject:  f.name,
-        score:    Math.max(50, Math.min(100, Math.round(fleetScore + RADAR_OFFSETS[i % RADAR_OFFSETS.length]))),
+        score:    0,
         fullMark: 100,
-      })),
-    [Math.round(fleetScore / 2)] // eslint-disable-line react-hooks/exhaustive-deps
-  );
+      }));
+    }
+
+    const scoreMap = Object.fromEntries(frameworks.map((f) => [f.id, f.avg_score]));
+
+    return FRAMEWORK_META.map((f) => ({
+      subject:  f.name,
+      score:    scoreMap[f.id] ?? 0,
+      fullMark: 100,
+    }));
+  }, [frameworks]);
 }
 
-/** Count critical unacknowledged alerts. */
+/** Count critical unacknowledged alerts from live drift events. */
 export function useActiveAlerts(driftEvents: DriftEvent[]) {
   return useMemo(
     () => driftEvents.filter((d) => !d.acknowledged && d.severity === "critical").length,
@@ -59,19 +56,22 @@ export function useActiveAlerts(driftEvents: DriftEvent[]) {
   );
 }
 
-/** Extract KPI values from fleet data. */
-export function useFleetKPIs(fleet: FleetData | null) {
+/** Extract KPI values from live fleet data. */
+export function useFleetKPIs(summary: DashboardSummary | null) {
   return useMemo(
     () => ({
-      score:              fleet?.average_compliance_score ?? 0,
-      totalDevices:       fleet?.total_devices ?? 0,
-      healthyDevices:     fleet?.healthy ?? 0,
-      driftingDevices:    fleet?.drifting ?? 0,
-      unreachableDevices: fleet?.unreachable ?? 0,
-      degradedDevices:    fleet?.degraded ?? 0,
-      fleetHealth:        fleet?.fleet_health_pct ?? 0,
-      activeDrifts:       fleet?.active_drift_events ?? 0,
+      score:              summary?.fleet?.average_compliance_score ?? 0,
+      totalDevices:       summary?.fleet?.total_devices ?? 0,
+      healthyDevices:     summary?.fleet?.healthy ?? 0,
+      driftingDevices:    summary?.fleet?.drifting ?? 0,
+      unreachableDevices: summary?.fleet?.unreachable ?? 0,
+      degradedDevices:    summary?.fleet?.degraded ?? 0,
+      fleetHealth:        summary?.fleet?.fleet_health_pct ?? 0,
+      activeDrifts:       summary?.fleet?.active_drift_events ?? 0,
+      openIncidents:      summary?.incidents?.open ?? 0,
+      criticalIncidents:  summary?.incidents?.critical_open ?? 0,
+      auditEvents24h:     summary?.audit?.last_24h ?? 0,
     }),
-    [fleet]
+    [summary]
   );
 }

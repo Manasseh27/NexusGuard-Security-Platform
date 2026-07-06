@@ -10,3 +10,4 @@ export { ComplianceFrameworksPanel } from "./ComplianceFrameworksPanel";
 export { DriftEventsPanel } from "./DriftEventsPanel";
 export { SeverityDistributionPanel } from "./SeverityDistributionPanel";
 export { FleetStatusPanel } from "./FleetStatusPanel";
+export { RecentActivityPanel } from "./RecentActivityPanel";

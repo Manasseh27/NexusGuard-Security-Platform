@@ -17,6 +17,7 @@ from app.api.v1.routers import (
     monitoring,
     incidents,
     notifications,
+    dashboard,
 )
 
 router = APIRouter()
@@ -34,3 +35,4 @@ router.include_router(monitoring.router,     prefix="/monitoring", tags=["Contin
 router.include_router(incidents.router,      prefix="/incidents",  tags=["Incidents"])
 router.include_router(notifications.router,  prefix="/notifications", tags=["Notifications"])
 router.include_router(health_advanced.router,prefix="/health",     tags=["Health"])
+router.include_router(dashboard.router,      prefix="/dashboard",  tags=["Dashboard"])

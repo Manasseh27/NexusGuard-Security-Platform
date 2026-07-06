@@ -123,6 +123,12 @@ export const authApi = {
   logout: () => http.post("/auth/logout"),
 };
 
+// ── Dashboard ─────────────────────────────────────────────────────────────────
+
+export const dashboardApi = {
+  summary: () => http.get("/dashboard/summary").then((r) => r.data),
+};
+
 // ── Monitoring ─────────────────────────────────────────────────────────────────
 
 export const monitoringApi = {
