@@ -42,7 +42,7 @@ PERMISSIONS: dict[str, list[str]] = {
     "security_analyst": [
         "compliance:read", "compliance:evaluate", "compliance:acknowledge",
         "devices:read", "audit:read", "audit:execute",
-        "monitoring:read", "threats:read", "reports:read",
+        "monitoring:read", "threats:read", "reports:read", "reports:write",
         "siem:read", "siem:write",
         "incidents:read", "incidents:write", "incidents:assign",
         "notifications:read", "notifications:write",
@@ -62,10 +62,10 @@ PERMISSIONS: dict[str, list[str]] = {
         "siem:read", "siem:write",
     ],
     "admin": [
-        "*",
+        "*", "users:read", "users:write", "ai:admin",
     ],
     "super_admin": [
-        "*",
+        "*", "users:read", "users:write", "ai:admin",
     ],
 }
 

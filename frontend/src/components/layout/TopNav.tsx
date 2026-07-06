@@ -1,9 +1,10 @@
-import React, { useState } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { C, ANIM, RADIUS } from "../../styles/tokens";
 import { StatusPill } from "../widgets";
 import { useLiveClock } from "../../hooks/useLiveClock";
 import { useAuthStore } from "../../stores/authStore";
+import { useAnyPermission } from "../../hooks/usePermission";
 
 interface TopNavProps {
   activeTab:    string;
@@ -11,26 +12,124 @@ interface TopNavProps {
   activeAlerts: number;
 }
 
-const TABS = [
-  { id: "overview",    label: "Overview",    icon: "⬡" },
-  { id: "compliance",  label: "Compliance",  icon: "◈" },
-  { id: "devices",     label: "Devices",     icon: "◫" },
-  { id: "siem",        label: "SIEM",        icon: "◉" },
-  { id: "ai copilot",  label: "AI Copilot",  icon: "◎" },
-] as const;
+interface TabDef {
+  id:         string;
+  label:      string;
+  icon:       string;
+  route:      string;
+  permission: string;  // any one of these grants access
+}
+
+const ALL_TABS: TabDef[] = [
+  { id: "overview",   label: "Overview",   icon: "⬡", route: "/",          permission: "monitoring:read" },
+  { id: "compliance", label: "Compliance", icon: "◈", route: "/compliance", permission: "compliance:read" },
+  { id: "devices",    label: "Devices",    icon: "◫", route: "/devices",    permission: "devices:read"    },
+  { id: "siem",       label: "SIEM",       icon: "◉", route: "/siem",       permission: "siem:read"       },
+  { id: "incidents",  label: "Incidents",  icon: "⚑", route: "/incidents",  permission: "incidents:read"  },
+  { id: "threats",    label: "Threats",    icon: "◬", route: "/threats",    permission: "threats:read"    },
+  { id: "ai copilot", label: "AI Copilot", icon: "◎", route: "/copilot",    permission: "ai:chat"         },
+  { id: "users",      label: "Users",      icon: "◑", route: "/users",      permission: "users:read"      },
+];
+
+const ROLE_LABELS: Record<string, string> = {
+  admin:            "Administrator",
+  super_admin:      "Super Admin",
+  soc_analyst:      "SOC Analyst",
+  security_analyst: "Security Analyst",
+  auditor:          "Auditor",
+  viewer:           "Viewer",
+  engineer:         "Engineer",
+  analyst:          "Analyst",
+};
+
+const ROLE_COLORS: Record<string, string> = {
+  admin:            C.red,
+  super_admin:      C.red,
+  soc_analyst:      C.yellow,
+  security_analyst: C.cyan,
+  auditor:          C.purple,
+  engineer:         C.yellow,
+  analyst:          C.cyan,
+  viewer:           C.textMuted,
+};
+
+function UserMenu({ onClose }: { onClose: () => void }) {
+  const user    = useAuthStore((s) => s.user);
+  const logout  = useAuthStore((s) => s.logout);
+  const navigate = useNavigate();
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) onClose();
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [onClose]);
+
+  const handleLogout = async () => {
+    await logout();
+    navigate("/login", { replace: true });
+  };
+
+  const roleLabel = ROLE_LABELS[user?.role ?? ""] ?? user?.role ?? "Unknown";
+  const roleColor = ROLE_COLORS[user?.role ?? ""] ?? C.textMuted;
+
+  return (
+    <div ref={ref} style={{
+      position: "absolute", top: 46, right: 0, zIndex: 300,
+      background: C.surface2, border: `1px solid ${C.border}`,
+      borderRadius: 12, padding: "8px 0", minWidth: 200,
+      boxShadow: "0 8px 32px rgba(0,0,0,0.6)",
+    }}>
+      {/* User info */}
+      <div style={{ padding: "10px 16px 10px", borderBottom: `1px solid ${C.border}` }}>
+        <div style={{ fontWeight: 600, fontSize: 14, color: C.text }}>
+          {user?.username}
+        </div>
+        <div style={{ fontSize: 11, color: C.textMuted, marginTop: 2 }}>
+          {user?.email}
+        </div>
+        <div style={{
+          marginTop: 6, display: "inline-block",
+          padding: "2px 8px", borderRadius: RADIUS.full,
+          background: `${roleColor}18`, color: roleColor,
+          border: `1px solid ${roleColor}40`, fontSize: 11, fontWeight: 600,
+        }}>
+          {roleLabel}
+        </div>
+      </div>
+
+      {/* Actions */}
+      <button
+        onClick={handleLogout}
+        style={{
+          display: "block", width: "100%", textAlign: "left",
+          padding: "10px 16px", background: "none", border: "none",
+          color: C.red, fontSize: 13, cursor: "pointer",
+          transition: `background ${ANIM.fast}`,
+        }}
+        onMouseEnter={(e) => { e.currentTarget.style.background = `${C.red}12`; }}
+        onMouseLeave={(e) => { e.currentTarget.style.background = "none"; }}
+      >
+        Sign out
+      </button>
+    </div>
+  );
+}
 
 export const TopNav: React.FC<TopNavProps> = ({ activeTab, onTabChange, activeAlerts }) => {
-  const now  = useLiveClock();
-  const user = useAuthStore((s) => s.user);
+  const now      = useLiveClock();
+  const user     = useAuthStore((s) => s.user);
   const navigate = useNavigate();
   const [userMenuOpen, setUserMenuOpen] = useState(false);
-  const routeByTab: Record<string, string> = {
-    overview: "/",
-    compliance: "/compliance",
-    devices: "/devices",
-    siem: "/siem",
-    "ai copilot": "/copilot",
-  };
+
+  // Filter tabs to only those the current user has permission for.
+  // Wildcard ["*"] grants all; otherwise check exact permission string.
+  const hasWildcard = user?.permissions.includes("*") ?? false;
+  const visibleTabs = ALL_TABS.filter((tab) =>
+    hasWildcard || (user?.permissions.includes(tab.permission) ?? false)
+  );
 
   const timeStr = now.toUTCString().slice(17, 25);
   const dateStr = now.toLocaleDateString("en-US", { month: "short", day: "numeric" });
@@ -68,7 +167,7 @@ export const TopNav: React.FC<TopNavProps> = ({ activeTab, onTabChange, activeAl
             color: C.text, fontWeight: 700, fontSize: 13,
             letterSpacing: "-0.01em", lineHeight: 1.2,
           }}>
-            Cisco Security
+            NexusGuard
           </div>
           <div style={{
             color: C.cyan, fontSize: 9, letterSpacing: "0.15em",
@@ -79,18 +178,16 @@ export const TopNav: React.FC<TopNavProps> = ({ activeTab, onTabChange, activeAl
         </div>
       </div>
 
-      {/* ── Tabs ── */}
-      <nav style={{
-        display: "flex", gap: 2, paddingLeft: 16, flex: 1,
-      }}>
-        {TABS.map((tab) => {
+      {/* ── Tabs (permission-filtered) ── */}
+      <nav style={{ display: "flex", gap: 2, paddingLeft: 16, flex: 1, overflowX: "auto" }}>
+        {visibleTabs.map((tab) => {
           const active = activeTab === tab.id;
           return (
             <button
               key={tab.id}
               onClick={() => {
                 onTabChange(tab.id);
-                navigate(routeByTab[tab.id] ?? "/");
+                navigate(tab.route);
               }}
               style={{
                 background: active ? `${C.cyan}12` : "transparent",
@@ -132,16 +229,14 @@ export const TopNav: React.FC<TopNavProps> = ({ activeTab, onTabChange, activeAl
       <div style={{
         display: "flex", alignItems: "center", gap: 12,
         paddingLeft: 16, borderLeft: `1px solid ${C.border}`,
-        height: "100%",
+        height: "100%", position: "relative",
       }}>
 
         {/* Live status */}
         <StatusPill status="live" />
 
         {/* Clock */}
-        <div style={{
-          display: "flex", flexDirection: "column", alignItems: "flex-end",
-        }}>
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end" }}>
           <span style={{
             color: C.text, fontSize: 12,
             fontFamily: "'JetBrains Mono', monospace",
@@ -164,7 +259,6 @@ export const TopNav: React.FC<TopNavProps> = ({ activeTab, onTabChange, activeAl
             padding: "3px 10px",
             fontSize: 11, fontWeight: 700,
             display: "flex", alignItems: "center", gap: 5,
-            animation: "border-glow 2s ease-in-out infinite",
             cursor: "pointer",
           }}>
             <span style={{ fontSize: 10 }}>⚠</span>
@@ -172,22 +266,28 @@ export const TopNav: React.FC<TopNavProps> = ({ activeTab, onTabChange, activeAl
           </div>
         )}
 
-        {/* User avatar */}
-        <div
-          onClick={() => setUserMenuOpen(!userMenuOpen)}
-          style={{
-            width: 30, height: 30, borderRadius: "50%",
-            background: `linear-gradient(135deg, ${C.purple}, ${C.blue})`,
-            display: "flex", alignItems: "center", justifyContent: "center",
-            fontSize: 12, cursor: "pointer",
-            border: `2px solid ${C.borderMid}`,
-            boxShadow: `0 0 12px ${C.purple}40`,
-            color: C.text, fontWeight: 700,
-            flexShrink: 0,
-          }}
-          title={user?.username ?? "User"}
-        >
-          {user?.username?.[0]?.toUpperCase() ?? "U"}
+        {/* User avatar + dropdown */}
+        <div style={{ position: "relative" }}>
+          <div
+            onClick={() => setUserMenuOpen((o) => !o)}
+            style={{
+              width: 30, height: 30, borderRadius: "50%",
+              background: `linear-gradient(135deg, ${C.purple}, ${C.blue})`,
+              display: "flex", alignItems: "center", justifyContent: "center",
+              fontSize: 12, cursor: "pointer",
+              border: `2px solid ${C.borderMid}`,
+              boxShadow: `0 0 12px ${C.purple}40`,
+              color: C.text, fontWeight: 700,
+              flexShrink: 0,
+            }}
+            title={user?.username ?? "User"}
+          >
+            {user?.username?.[0]?.toUpperCase() ?? "U"}
+          </div>
+
+          {userMenuOpen && (
+            <UserMenu onClose={() => setUserMenuOpen(false)} />
+          )}
         </div>
       </div>
     </header>

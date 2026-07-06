@@ -103,7 +103,7 @@ class ComplianceExceptionRequest(BaseModel):
     response_model=list[dict[str, str]],
 )
 async def list_frameworks(
-    current_user=Depends(get_current_user),
+    current_user=Depends(require_permission("compliance:read")),
 ) -> list[dict[str, str]]:
     """Get list of supported compliance frameworks."""
     frameworks = [

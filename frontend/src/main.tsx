@@ -57,7 +57,11 @@ function ProtectedRoute({
     return <>{children}</>;
   }
 
-  if (user.permissions.includes("*") || user.permissions.includes(permission)) {
+  // Mirror backend has_permission(): ["*"] grants everything
+  const hasPermission =
+    user.permissions.includes("*") || user.permissions.includes(permission);
+
+  if (hasPermission) {
     return <>{children}</>;
   }
 
@@ -84,7 +88,7 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
             <Route path="/siem" element={<ProtectedRoute permission="siem:read"><SIEMPage /></ProtectedRoute>} />
             <Route path="/alerts" element={<ProtectedRoute permission="compliance:read"><AlertsPage /></ProtectedRoute>} />
             <Route path="/incidents" element={<ProtectedRoute permission="incidents:read"><IncidentsPage /></ProtectedRoute>} />
-            <Route path="/users" element={<ProtectedRoute permission="admin"><UsersPage /></ProtectedRoute>} />
+            <Route path="/users" element={<ProtectedRoute permission="users:read"><UsersPage /></ProtectedRoute>} />
             <Route path="/analytics" element={<ProtectedRoute permission="reports:read"><AnalyticsPage /></ProtectedRoute>} />
             <Route path="/threats" element={<ProtectedRoute permission="threats:read"><ThreatsPage /></ProtectedRoute>} />
             <Route path="/copilot" element={<ProtectedRoute permission="ai:chat"><CopilotPage /></ProtectedRoute>} />

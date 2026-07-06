@@ -46,7 +46,7 @@ async def list_users(
     limit: int = Query(default=50, le=500),
     offset: int = Query(default=0),
     db: AsyncSession = Depends(get_db),
-    current_user=Depends(require_permission("admin")),
+    current_user=Depends(require_permission("users:read")),
 ) -> list[UserResponse]:
     """List all users in the tenant."""
     user_service = UserService(db)
@@ -70,7 +70,7 @@ async def list_users(
 async def create_user(
     request: CreateUserRequest,
     db: AsyncSession = Depends(get_db),
-    current_user=Depends(require_permission("admin")),
+    current_user=Depends(require_permission("users:write")),
 ) -> UserResponse:
     """Create a new user in the tenant."""
     user_service = UserService(db)
@@ -114,7 +114,7 @@ async def create_user(
 async def get_user(
     user_id: UUID,
     db: AsyncSession = Depends(get_db),
-    current_user=Depends(require_permission("admin")),
+    current_user=Depends(require_permission("users:read")),
 ) -> UserResponse:
     """Get a specific user."""
     user_service = UserService(db)
@@ -142,7 +142,7 @@ async def update_user(
     user_id: UUID,
     request: UpdateUserRequest,
     db: AsyncSession = Depends(get_db),
-    current_user=Depends(require_permission("admin")),
+    current_user=Depends(require_permission("users:write")),
 ) -> UserResponse:
     """Update a user."""
     user_service = UserService(db)
@@ -185,7 +185,7 @@ async def update_user(
 async def delete_user(
     user_id: UUID,
     db: AsyncSession = Depends(get_db),
-    current_user=Depends(require_permission("admin")),
+    current_user=Depends(require_permission("users:write")),
 ):
     """Delete a user (soft delete - sets is_active=False)."""
     user_service = UserService(db)
