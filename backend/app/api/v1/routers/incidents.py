@@ -83,7 +83,17 @@ def _incident_response(incident) -> IncidentResponse:
     )
 
 
-@router.post("", response_model=IncidentResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "",
+    response_model=IncidentResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Create incident",
+    description="Open a new security incident. Requires `incidents:write` permission.",
+    responses={
+        201: {"description": "Incident created"},
+        422: {"description": "Validation error"},
+    },
+)
 async def create_incident(
     request: IncidentCreateRequest,
     db: AsyncSession = Depends(get_db),
@@ -106,7 +116,12 @@ async def create_incident(
     return _incident_response(incident)
 
 
-@router.get("", response_model=list[IncidentResponse])
+@router.get(
+    "",
+    response_model=list[IncidentResponse],
+    summary="List incidents",
+    description="List incidents for the current tenant. Filter by status or assignee.",
+)
 async def list_incidents(
     status: IncidentStatus | None = Query(default=None),
     assigned_to: UUID | None = Query(default=None),
@@ -126,7 +141,12 @@ async def list_incidents(
     return [_incident_response(incident) for incident in incidents]
 
 
-@router.get("/{incident_id}", response_model=IncidentResponse)
+@router.get(
+    "/{incident_id}",
+    response_model=IncidentResponse,
+    summary="Get incident",
+    responses={404: {"description": "Incident not found"}},
+)
 async def get_incident(
     incident_id: UUID,
     db: AsyncSession = Depends(get_db),
@@ -139,7 +159,13 @@ async def get_incident(
     return _incident_response(incident)
 
 
-@router.patch("/{incident_id}/status", response_model=IncidentResponse)
+@router.patch(
+    "/{incident_id}/status",
+    response_model=IncidentResponse,
+    summary="Update incident status",
+    description="Transition an incident through its lifecycle: new → assigned → investigating → contained → resolved → closed.",
+    responses={404: {"description": "Incident not found"}},
+)
 async def update_incident_status(
     incident_id: UUID,
     request: IncidentUpdateStatusRequest,
@@ -159,7 +185,12 @@ async def update_incident_status(
     return _incident_response(incident)
 
 
-@router.patch("/{incident_id}/assign", response_model=IncidentResponse)
+@router.patch(
+    "/{incident_id}/assign",
+    response_model=IncidentResponse,
+    summary="Assign incident",
+    responses={404: {"description": "Incident not found"}},
+)
 async def assign_incident(
     incident_id: UUID,
     request: IncidentAssignRequest,
@@ -179,7 +210,12 @@ async def assign_incident(
     return _incident_response(incident)
 
 
-@router.post("/{incident_id}/comments", status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/{incident_id}/comments",
+    status_code=status.HTTP_201_CREATED,
+    summary="Add comment",
+    description="Add a comment to an incident. Set `is_internal=true` for SOC-only notes.",
+)
 async def add_incident_comment(
     incident_id: UUID,
     request: IncidentCommentRequest,
@@ -207,7 +243,10 @@ async def add_incident_comment(
     }
 
 
-@router.get("/{incident_id}/comments")
+@router.get(
+    "/{incident_id}/comments",
+    summary="List comments",
+)
 async def list_incident_comments(
     incident_id: UUID,
     limit: int = Query(default=200, ge=1, le=1000),
@@ -229,7 +268,11 @@ async def list_incident_comments(
     ]
 
 
-@router.get("/{incident_id}/timeline")
+@router.get(
+    "/{incident_id}/timeline",
+    summary="Incident timeline",
+    description="Full chronological event log for an incident — status changes, assignments, comments.",
+)
 async def incident_timeline(
     incident_id: UUID,
     limit: int = Query(default=500, ge=1, le=2000),

@@ -1,5 +1,5 @@
 """
-Cisco Security Platform - Enterprise FastAPI Application
+NexusGuard Security Platform - Enterprise FastAPI Application
 Principal entry point with full middleware stack, observability, and security hardening
 """
 
@@ -114,17 +114,122 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     await close_broker()
 
 
+_OPENAPI_DESCRIPTION = """
+## NexusGuard Security Platform API
+
+Enterprise cybersecurity operations platform — compliance monitoring, incident management,
+SIEM event processing, AI-assisted security operations, and device fleet management.
+
+### Authentication
+
+All protected endpoints require a **Bearer JWT** token.
+
+1. Call `POST /api/v1/auth/login` with your credentials.
+2. Copy the `access_token` from the response.
+3. Click **Authorize** (🔒) at the top of this page and enter: `Bearer <your_token>`
+
+Tokens expire after **30 minutes**. Use `POST /api/v1/auth/refresh` to renew.
+
+### Rate Limits
+
+| Endpoint | Limit |
+|---|---|
+| `/auth/login` | 5 / min |
+| `/auth/register` | 3 / min |
+| `/auth/forgot-password` | 3 / 5 min |
+| `/ai/*` | 20 / min |
+| All other endpoints | 1000 / hour |
+
+### Roles & Permissions
+
+| Role | Key Permissions |
+|---|---|
+| `admin` / `super_admin` | All permissions (`*`) |
+| `soc_analyst` / `engineer` | Devices, compliance, incidents, SIEM, AI |
+| `security_analyst` / `analyst` | Compliance read/evaluate, incidents, AI |
+| `auditor` | Read-only across all resources |
+| `viewer` | Read-only across all resources |
+"""
+
+_OPENAPI_TAGS = [
+    {"name": "Authentication",          "description": "Register, login, token refresh, logout, password reset, email verification, and session management."},
+    {"name": "Dashboard",               "description": "Single-call summary endpoint powering the live dashboard — fleet KPIs, compliance scores, trend data, and service health."},
+    {"name": "Devices",                 "description": "Device inventory management — CRUD, status tracking, and fleet queries."},
+    {"name": "Compliance",              "description": "Compliance evaluation, scoring, drift detection, exception management, and fleet-wide summaries across CIS, NIST, PCI-DSS, ISO 27001, and SOC 2."},
+    {"name": "Continuous Monitoring",   "description": "Real-time fleet monitoring, per-device polling, drift event tracking, and compliance trend data."},
+    {"name": "Incidents",               "description": "Security incident lifecycle — creation, status transitions, assignment, comments, and timeline."},
+    {"name": "Audit",                   "description": "Immutable audit log — query, filter, and export platform activity records."},
+    {"name": "SIEM",                    "description": "Security event ingestion, correlation, and export to Splunk, Sentinel, Elastic, and QRadar."},
+    {"name": "Threat Intelligence",     "description": "CVE tracking, threat indicators, and intelligence summaries."},
+    {"name": "Reports",                 "description": "Compliance and security report generation, listing, and download."},
+    {"name": "Notifications",           "description": "In-app notification management — list, mark as read."},
+    {"name": "Users & RBAC",            "description": "User management and role-based access control — create, update, deactivate users within a tenant."},
+    {"name": "AI Copilot",              "description": "AI-powered security assistant — chat (streaming + non-streaming), compliance explanation, incident analysis, device recommendations, remediation guidance, CVE explanation, attack path analysis, and risk prioritization."},
+    {"name": "Health",                  "description": "Platform health checks — liveness, readiness, and detailed service status."},
+]
+
+
 def create_application() -> FastAPI:
     """Factory: build the fully configured FastAPI application."""
     app = FastAPI(
         title="NexusGuard Security Platform",
-        description="Enterprise-grade cybersecurity compliance and automation platform",
+        description=_OPENAPI_DESCRIPTION,
         version=settings.VERSION,
-        docs_url="/api/docs" if settings.ENVIRONMENT != "production" else None,
-        redoc_url="/api/redoc" if settings.ENVIRONMENT != "production" else None,
-        openapi_url="/api/openapi.json" if settings.ENVIRONMENT != "production" else None,
+        # Always expose docs — protected by network/auth in production
+        docs_url="/docs",
+        redoc_url="/redoc",
+        openapi_url="/openapi.json",
+        swagger_ui_parameters={
+            "persistAuthorization": True,
+            "displayRequestDuration": True,
+            "filter": True,
+            "tryItOutEnabled": True,
+            "syntaxHighlight.theme": "monokai",
+        },
+        openapi_tags=_OPENAPI_TAGS,
+        contact={
+            "name": "NexusGuard Platform",
+            "url": "http://localhost:3000",
+        },
+        license_info={
+            "name": "Proprietary",
+        },
         lifespan=lifespan,
     )
+
+    # Inject JWT Bearer security scheme into the OpenAPI spec
+    from fastapi.openapi.utils import get_openapi
+
+    def _custom_openapi():
+        if app.openapi_schema:
+            return app.openapi_schema
+        schema = get_openapi(
+            title=app.title,
+            version=app.version,
+            description=app.description,
+            routes=app.routes,
+            tags=_OPENAPI_TAGS,
+        )
+        schema["info"]["x-logo"] = {"url": "https://fastapi.tiangolo.com/img/logo-margin/logo-teal.png"}
+        # Add JWT Bearer security scheme
+        schema.setdefault("components", {})
+        schema["components"]["securitySchemes"] = {
+            "BearerAuth": {
+                "type": "http",
+                "scheme": "bearer",
+                "bearerFormat": "JWT",
+                "description": "Enter your JWT access token. Obtain one from `POST /api/v1/auth/login`.",
+            }
+        }
+        # Apply security globally to all operations
+        for path_item in schema.get("paths", {}).values():
+            for operation in path_item.values():
+                if isinstance(operation, dict) and "operationId" in operation:
+                    operation.setdefault("security", [{"BearerAuth": []}])
+        app.openapi_schema = schema
+        return schema
+
+    app.openapi = _custom_openapi
 
     # ── Security middleware (order matters — outermost first) ──────────────────
     app.add_middleware(SecurityHeadersEnhanced)

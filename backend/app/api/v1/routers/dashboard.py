@@ -32,7 +32,38 @@ log = structlog.get_logger(__name__)
 router = APIRouter()
 
 
-@router.get("/summary")
+@router.get(
+    "/summary",
+    summary="Live dashboard summary",
+    description=(
+        "Single-call endpoint that returns everything the dashboard needs: "
+        "fleet KPIs, per-framework compliance scores, incident counts, "
+        "24-hour compliance trend (hourly buckets), recent activity feed "
+        "(audit + incidents merged), and real-time service health checks. "
+        "Requires `monitoring:read` permission."
+    ),
+    responses={
+        200: {
+            "description": "Dashboard summary",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "fleet": {"total_devices": 42, "healthy": 38, "drifting": 3, "unreachable": 1, "average_compliance_score": 87.4, "fleet_health_pct": 90.5, "active_drift_events": 5},
+                        "frameworks": [{"id": "cis", "avg_score": 91.2, "device_count": 42, "devices_compliant": 35, "devices_at_risk": 6, "devices_critical": 1}],
+                        "incidents": {"total": 18, "open": 4, "critical_open": 1},
+                        "audit": {"total": 2340, "last_24h": 87},
+                        "trend": [{"time": "00:00", "score": 88.1, "hour": 0}],
+                        "recent_activity": [],
+                        "services": {"api": True, "database": True, "cache": True},
+                        "generated_at": "2024-01-15T10:30:00Z",
+                    }
+                }
+            },
+        },
+        401: {"description": "Not authenticated"},
+        403: {"description": "Insufficient permissions"},
+    },
+)
 async def dashboard_summary(
     db: AsyncSession = Depends(get_db),
     current_user=Depends(require_permission("monitoring:read")),

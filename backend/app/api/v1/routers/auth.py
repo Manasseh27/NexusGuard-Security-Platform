@@ -155,7 +155,18 @@ async def _store_token_record(key: str, payload: dict[str, str], ttl_seconds: in
     await redis_client.setex(key, ttl_seconds, json.dumps(payload))
 
 
-@router.post("/register", response_model=TokenResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/register",
+    response_model=TokenResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Register a new user",
+    description="Create a new user account and receive JWT tokens immediately. Password must be ≥12 characters with upper, lower, digit, and special character.",
+    responses={
+        201: {"description": "User created, tokens issued"},
+        400: {"description": "Username or email already exists", "content": {"application/json": {"example": {"detail": "Username already exists"}}}},
+        422: {"description": "Password policy violation or invalid input"},
+    },
+)
 async def register(request: RegisterRequest, db=Depends(get_db)) -> TokenResponse:
     """Register a new user and issue initial tokens."""
     validate_password_policy(request.password)
@@ -190,7 +201,29 @@ async def register(request: RegisterRequest, db=Depends(get_db)) -> TokenRespons
     return await _build_tokens(user)
 
 
-@router.post("/login", response_model=TokenResponse)
+@router.post(
+    "/login",
+    response_model=TokenResponse,
+    summary="Authenticate and obtain JWT tokens",
+    description="Authenticate with username and password. Returns access and refresh tokens. Set `remember_me=true` for a 30-day refresh token.",
+    responses={
+        200: {"description": "Authentication successful"},
+        401: {"description": "Invalid credentials", "content": {"application/json": {"example": {"detail": "Invalid credentials"}}}},
+        423: {"description": "Account locked after repeated failures"},
+    },
+    openapi_extra={
+        "requestBody": {
+            "content": {
+                "application/json": {
+                    "examples": {
+                        "admin": {"summary": "Admin login", "value": {"username": "admin", "password": "admin123", "remember_me": False}},
+                        "analyst": {"summary": "Analyst login", "value": {"username": "analyst", "password": "analyst123", "remember_me": False}},
+                    }
+                }
+            }
+        }
+    },
+)
 async def login(request: LoginRequest, db=Depends(get_db)) -> TokenResponse:
     """Authenticate user and return JWT tokens."""
     if await is_account_locked(request.username):
@@ -210,7 +243,16 @@ async def login(request: LoginRequest, db=Depends(get_db)) -> TokenResponse:
     return tokens
 
 
-@router.post("/refresh", response_model=TokenResponse)
+@router.post(
+    "/refresh",
+    response_model=TokenResponse,
+    summary="Refresh access token",
+    description="Exchange a valid refresh token for a new access/refresh token pair. The old refresh token is revoked.",
+    responses={
+        200: {"description": "New token pair issued"},
+        401: {"description": "Invalid or expired refresh token"},
+    },
+)
 async def refresh(request: RefreshRequest, db=Depends(get_db)) -> TokenResponse:
     """Refresh access token using refresh token."""
     try:
@@ -242,7 +284,12 @@ async def refresh(request: RefreshRequest, db=Depends(get_db)) -> TokenResponse:
     return tokens
 
 
-@router.get("/me")
+@router.get(
+    "/me",
+    summary="Get current user",
+    description="Returns the authenticated user's profile, role, and resolved permissions.",
+    responses={401: {"description": "Not authenticated"}},
+)
 async def get_current_user_info(current_user=Depends(get_current_user)):
     """Get current authenticated user info."""
     return {
@@ -255,7 +302,13 @@ async def get_current_user_info(current_user=Depends(get_current_user)):
     }
 
 
-@router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
+@router.post(
+    "/logout",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Logout and revoke session",
+    description="Revokes the current access token and destroys the server-side session.",
+    responses={204: {"description": "Logged out successfully"}},
+)
 async def logout(
     current_user=Depends(get_current_user),
     credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme),
@@ -274,7 +327,12 @@ async def logout(
     return None
 
 
-@router.get("/sessions", response_model=list[SessionResponse])
+@router.get(
+    "/sessions",
+    response_model=list[SessionResponse],
+    summary="List active sessions",
+    description="Returns all active sessions for the current user stored in Redis.",
+)
 async def list_sessions(current_user=Depends(get_current_user)) -> list[SessionResponse]:
     """List active sessions for the current user."""
     redis_client = get_redis()
@@ -309,7 +367,16 @@ async def list_sessions(current_user=Depends(get_current_user)) -> list[SessionR
     return sessions
 
 
-@router.delete("/sessions/{session_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete(
+    "/sessions/{session_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Revoke a session",
+    description="Invalidates a specific session by ID. Users can only revoke their own sessions.",
+    responses={
+        204: {"description": "Session revoked"},
+        403: {"description": "Cannot revoke another user's session"},
+    },
+)
 async def revoke_session(
     session_id: str,
     current_user=Depends(get_current_user),
@@ -327,7 +394,13 @@ async def revoke_session(
     return None
 
 
-@router.post("/forgot-password", response_model=GenericMessageResponse)
+@router.post(
+    "/forgot-password",
+    response_model=GenericMessageResponse,
+    summary="Request password reset",
+    description="Issues a password reset token for the given email. Always returns success to prevent user enumeration.",
+    responses={200: {"description": "Reset token issued (if account exists)"}},
+)
 async def forgot_password(request: ForgotPasswordRequest, db=Depends(get_db)) -> GenericMessageResponse:
     """Issue a password reset token."""
     user_service = UserService(db)
@@ -355,7 +428,16 @@ async def forgot_password(request: ForgotPasswordRequest, db=Depends(get_db)) ->
     )
 
 
-@router.post("/reset-password", response_model=GenericMessageResponse)
+@router.post(
+    "/reset-password",
+    response_model=GenericMessageResponse,
+    summary="Reset password with token",
+    description="Resets the user's password using a valid reset token. Token is single-use and expires after 1 hour.",
+    responses={
+        200: {"description": "Password reset successfully"},
+        400: {"description": "Invalid or expired reset token"},
+    },
+)
 async def reset_password(request: ResetPasswordRequest, db=Depends(get_db)) -> GenericMessageResponse:
     """Reset a password using a reset token."""
     validate_password_policy(request.new_password)
@@ -381,7 +463,16 @@ async def reset_password(request: ResetPasswordRequest, db=Depends(get_db)) -> G
     return GenericMessageResponse(message="Password reset successfully")
 
 
-@router.post("/verify-email", response_model=GenericMessageResponse)
+@router.post(
+    "/verify-email",
+    response_model=GenericMessageResponse,
+    summary="Verify email address",
+    description="Activates a user account using the email verification token issued at registration.",
+    responses={
+        200: {"description": "Email verified"},
+        400: {"description": "Invalid or expired verification token"},
+    },
+)
 async def verify_email(request: VerifyEmailRequest, db=Depends(get_db)) -> GenericMessageResponse:
     """Verify a user email address."""
     redis_client = get_redis()
